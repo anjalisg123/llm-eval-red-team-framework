@@ -1,0 +1,30 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+
+# Secrets
+.env
+
+# Local vector store
+.chroma/
+
+# Eval outputs — but keep the committed sample run for the README
+results/*
+!results/sample_run/
+!results/sample_run/**
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/
+
+# Claude Code local settings
+.claude/settings.local.json
+
+# Backup files
+*.bak.csv
