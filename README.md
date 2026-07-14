@@ -1,7 +1,6 @@
 # LLM Evaluation & Red-Teaming Framework
 
-<!-- Replace OWNER/REPO with your GitHub path once you push. -->
-[![CI](https://github.com/OWNER/REPO/actions/workflows/ci.yml/badge.svg)](https://github.com/OWNER/REPO/actions/workflows/ci.yml)
+[![CI](https://github.com/anjalisg123/llm-eval-red-team-framework/actions/workflows/ci.yml/badge.svg)](https://github.com/anjalisg123/llm-eval-red-team-framework/actions/workflows/ci.yml)
 
 A from-scratch framework that stress-tests a Retrieval-Augmented Generation (RAG) system
 against six failure categories, scores each response with an **LLM-as-judge**, and
