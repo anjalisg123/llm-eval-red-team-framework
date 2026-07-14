@@ -1,7 +1,6 @@
 """Tests for judge output parsing. The actual LLM call is mocked; we test that whatever
 the judge returns is coerced into a valid Judgment (clamped, typed, defaulted)."""
 
-import pytest
 
 from evals import judge as judge_mod
 from evals.schemas import Category, Prompt, Response

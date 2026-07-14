@@ -4,7 +4,6 @@ when its answer_sha still matches the current run's answer."""
 import csv
 import json
 
-import pytest
 
 from validation import validate as v
 
