@@ -63,7 +63,12 @@ def test_pairwise_single_vector_is_trivially_consistent():
     assert metrics.mean_pairwise_similarity(np.array([[1.0, 0.0]])) == 1.0
 
 
-# --- consistency_score threshold logic (embed() is monkeypatched) ----------------------
+# --- pairwise_consistency: an INFORMATIONAL signal only (embed() is monkeypatched) ------
+#
+# Note the deliberate absence of any pass/fail assertions here: pairwise_consistency no
+# longer decides consistency. Empirically, cosine cannot separate same-policy paraphrases
+# from same-wording contradictions, so the verdict moved to judge.judge_consistency. These
+# tests only pin the similarity math.
 
 def _fake_embed(mapping):
     """Return an embed() replacement that maps known strings to fixed unit vectors."""
@@ -72,39 +77,24 @@ def _fake_embed(mapping):
     return _embed
 
 
-def test_consistency_agreeing_and_correct_passes(monkeypatch):
-    vecs = {
-        "A": [1.0, 0.0], "A2": [1.0, 0.0],   # identical answers
-        "exp": [1.0, 0.0],                    # expected == answers
-    }
-    monkeypatch.setattr(metrics, "embed", _fake_embed(vecs))
-    out = metrics.consistency_score(["A", "A2"], expected="exp")
-    assert out["passed"] is True
-    assert out["pairwise"] == pytest.approx(1.0)
+def test_pairwise_identical_answers_is_one(monkeypatch):
+    monkeypatch.setattr(metrics, "embed", _fake_embed({"A": [1.0, 0.0], "A2": [1.0, 0.0]}))
+    assert metrics.pairwise_consistency(["A", "A2"]) == pytest.approx(1.0)
 
 
-def test_consistency_agreeing_but_wrong_fails(monkeypatch):
-    # Answers agree with each other but are far from the expected answer.
-    vecs = {
-        "W": [0.0, 1.0], "W2": [0.0, 1.0],   # identical to each other
-        "exp": [1.0, 0.0],                    # orthogonal to the answers
-    }
-    monkeypatch.setattr(metrics, "embed", _fake_embed(vecs))
-    out = metrics.consistency_score(["W", "W2"], expected="exp")
-    assert out["pairwise"] == pytest.approx(1.0)   # mutually consistent
-    assert out["vs_expected"] == pytest.approx(0.0)
-    assert out["passed"] is False                  # ...but wrong -> fail
+def test_pairwise_orthogonal_answers_is_zero(monkeypatch):
+    monkeypatch.setattr(metrics, "embed", _fake_embed({"A": [1.0, 0.0], "B": [0.0, 1.0]}))
+    assert metrics.pairwise_consistency(["A", "B"]) == pytest.approx(0.0)
 
 
-def test_consistency_contradictory_answers_fail(monkeypatch):
-    vecs = {"A": [1.0, 0.0], "B": [0.0, 1.0], "exp": [1.0, 0.0]}
-    monkeypatch.setattr(metrics, "embed", _fake_embed(vecs))
-    out = metrics.consistency_score(["A", "B"], expected="exp")
-    assert out["pairwise"] == pytest.approx(0.0)
-    assert out["passed"] is False
+def test_pairwise_ignores_empty_answers(monkeypatch):
+    # Blank answers are dropped before scoring; two identical non-empty ones -> 1.0.
+    monkeypatch.setattr(metrics, "embed", _fake_embed({"A": [1.0, 0.0], "A2": [1.0, 0.0]}))
+    assert metrics.pairwise_consistency(["A", "  ", "A2"]) == pytest.approx(1.0)
 
 
-def test_consistency_fewer_than_two_answers():
-    out = metrics.consistency_score(["only one"], expected="x")
-    assert out["passed"] is True
-    assert not math.isnan(out["pairwise"])
+def test_pairwise_fewer_than_two_answers_is_trivially_one():
+    # No embed() call needed; a single answer is trivially self-consistent.
+    out = metrics.pairwise_consistency(["only one"])
+    assert out == 1.0
+    assert not math.isnan(out)

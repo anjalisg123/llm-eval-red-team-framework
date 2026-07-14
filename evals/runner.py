@@ -4,7 +4,8 @@ Flow:
   load prompts  ->  query the target (HTTP)  ->  score  ->  write results JSON
 
 Scoring is routed by category:
-  - inconsistency  -> grouped and scored by metrics.consistency_score (embeddings)
+  - inconsistency  -> grouped; the judge decides if the group's answers agree, with
+                      pairwise cosine reported alongside as an informational signal
   - everything else -> scored one-by-one by the LLM judge
 
 The run is deterministic-by-construction where it can be (judge temperature 0, target
@@ -61,7 +62,7 @@ def run(include_generated: bool = True, limit: int | None = None) -> dict:
         print(f"  [{i}/{len(judged)}] {p.id:28s} {'PASS' if j.passed else 'FAIL'} ({j.score:.2f})")
 
     if incon:
-        print(f"\nScoring {len(incon)} inconsistency prompts by answer similarity...")
+        print(f"\nScoring {len(incon)} inconsistency prompts by judge-based group agreement...")
         results.extend(_score_inconsistency(incon, responses))
 
     # 3. Persist.
@@ -81,19 +82,21 @@ def _score_inconsistency(prompts: list[Prompt], responses: dict[str, Response]) 
     out: list[Result] = []
     for gid, members in groups.items():
         answers = [responses[m.id].answer for m in members]
-        expected = members[0].expected_behavior.strip()
-        score = metrics.consistency_score(answers, expected=expected)
+        # Verdict comes from the judge (handles negation/numeric contradictions); the
+        # cosine similarity is reported alongside as an informational sanity signal only.
+        verdict = judge_mod.judge_consistency(members[0].query, answers)
+        pairwise = metrics.pairwise_consistency(answers)
         for m in members:
             j = Judgment(
                 prompt_id=m.id,
                 category=Category.INCONSISTENCY,
-                passed=score["passed"],
-                score=score["pairwise"],
+                passed=verdict["passed"],
+                score=1.0 if verdict["passed"] else 0.0,
                 reasoning=(
-                    f"Group '{gid}': mean pairwise answer similarity="
-                    f"{score['pairwise']}, vs_expected={score['vs_expected']}."
+                    f"Group '{gid}' ({len(members)} paraphrases): {verdict['reasoning']} "
+                    f"(pairwise cosine={pairwise}, informational only)."
                 ),
-                evidence=f"group={gid}, members={len(members)}",
+                evidence=verdict["conflicting_pair"],
             )
             out.append(Result(prompt=m, response=responses[m.id], judgment=j))
     return out

@@ -69,3 +69,32 @@ def test_build_prompt_handles_no_context():
     r = Response(prompt_id="t1", answer="something", contexts=[])
     text = judge_mod.build_prompt(_prompt(), r)
     assert "no context" in text.lower()
+
+
+# --- judge_consistency (the inconsistency-group verdict; LLM call mocked) ---------------
+
+def test_judge_consistency_parses_verdict(monkeypatch):
+    monkeypatch.setattr(judge_mod, "_call_judge_consistency", lambda _p: {
+        "consistent": False,
+        "conflicting_pair": "Answer 1 says 99.95% but Answer 2 says 99.0%",
+        "reasoning": "Numeric contradiction.",
+    })
+    out = judge_mod.judge_consistency("What uptime?", ["99.95%", "99.0%"])
+    assert out["passed"] is False
+    assert "99.0%" in out["conflicting_pair"]
+
+
+def test_judge_consistency_defaults_on_empty_output(monkeypatch):
+    monkeypatch.setattr(judge_mod, "_call_judge_consistency", lambda _p: {})
+    out = judge_mod.judge_consistency("q", ["a", "b"])
+    assert out["passed"] is False          # missing "consistent" -> default False
+    assert out["conflicting_pair"] == "none"
+
+
+def test_judge_consistency_short_circuits_without_llm(monkeypatch):
+    # Fewer than two non-empty answers: must NOT call the LLM.
+    def _boom(_p):
+        raise AssertionError("LLM should not be called for < 2 answers")
+    monkeypatch.setattr(judge_mod, "_call_judge_consistency", _boom)
+    out = judge_mod.judge_consistency("q", ["only one", "   "])
+    assert out["passed"] is True

@@ -3,6 +3,7 @@ grouping. LLM/HTTP boundaries are not exercised here — only the pure reduction
 
 import pytest
 
+from evals import judge as judge_mod
 from evals import metrics, runner
 from evals.schemas import Category, Judgment, Prompt, Response, Result
 
@@ -36,10 +37,12 @@ def test_summarize_empty():
 
 
 def test_inconsistency_grouping_shares_group_verdict(monkeypatch):
-    # Two paraphrases in one group; force a known consistency verdict.
-    monkeypatch.setattr(metrics, "consistency_score",
-                        lambda answers, expected=None: {"pairwise": 0.42,
-                                                        "vs_expected": 0.30, "passed": False})
+    # The judge decides the verdict; cosine is only reported. Force both.
+    monkeypatch.setattr(judge_mod, "judge_consistency",
+                        lambda question, answers: {"passed": False,
+                                                   "conflicting_pair": "Answer 1 vs Answer 2",
+                                                   "reasoning": "They disagree."})
+    monkeypatch.setattr(metrics, "pairwise_consistency", lambda answers: 0.42)
     prompts = [
         Prompt(id="c1", category=Category.INCONSISTENCY, query="q1",
                expected_behavior="e", group_id="g"),
@@ -52,16 +55,20 @@ def test_inconsistency_grouping_shares_group_verdict(monkeypatch):
     }
     out = runner._score_inconsistency(prompts, responses)
     assert len(out) == 2
-    # Both members carry the same (group) verdict.
+    # Both members carry the same (group) verdict from the judge, not from cosine.
     assert all(r.judgment.passed is False for r in out)
-    assert all(r.judgment.score == pytest.approx(0.42) for r in out)
+    assert all(r.judgment.score == pytest.approx(0.0) for r in out)   # fail -> 0.0
+    assert all("Answer 1 vs Answer 2" in r.judgment.evidence for r in out)
+    assert all("0.42" in r.judgment.reasoning for r in out)           # cosine reported
     assert all(r.judgment.category == Category.INCONSISTENCY for r in out)
 
 
-def test_inconsistency_two_separate_groups(monkeypatch):
-    monkeypatch.setattr(metrics, "consistency_score",
-                        lambda answers, expected=None: {"pairwise": 0.9,
-                                                        "vs_expected": 0.9, "passed": True})
+def test_inconsistency_pass_verdict_scores_one(monkeypatch):
+    monkeypatch.setattr(judge_mod, "judge_consistency",
+                        lambda question, answers: {"passed": True,
+                                                   "conflicting_pair": "none",
+                                                   "reasoning": "Consistent."})
+    monkeypatch.setattr(metrics, "pairwise_consistency", lambda answers: 0.9)
     prompts = [
         Prompt(id="a1", category=Category.INCONSISTENCY, query="q", expected_behavior="e",
                group_id="ga"),
@@ -72,3 +79,5 @@ def test_inconsistency_two_separate_groups(monkeypatch):
                  "b1": Response(prompt_id="b1", answer="y")}
     out = runner._score_inconsistency(prompts, responses)
     assert {r.prompt.id for r in out} == {"a1", "b1"}
+    assert all(r.judgment.passed is True and r.judgment.score == pytest.approx(1.0)
+               for r in out)

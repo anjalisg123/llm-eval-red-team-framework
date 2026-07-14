@@ -58,36 +58,22 @@ def mean_pairwise_similarity(vectors: np.ndarray) -> float:
     return float(sim[iu].mean())
 
 
-def consistency_score(answers: list[str], expected: str | None = None) -> dict:
-    """Score one inconsistency group.
+def pairwise_consistency(answers: list[str]) -> float:
+    """Mean pairwise cosine similarity across a group's answers — an INFORMATIONAL signal
+    only, no pass/fail.
 
-    Returns pairwise agreement among the answers and, if `expected` is given, how close
-    the group sits to the correct answer. `passed` requires BOTH tight agreement and, when
-    provided, closeness to the expected answer — so mutually-consistent-but-wrong fails.
+    We deliberately do NOT threshold this to decide consistency. Empirically, embedding
+    cosine cannot separate "same policy, different words" from "opposite policy, same
+    words": a one-token contradiction ("99.95%" vs "99.0%") stays near 1.0 while a genuine
+    paraphrase in different vocabulary can fall below 0.72. Cosine measures lexical/topical
+    overlap, not logical agreement. The pass/fail verdict is therefore made by the judge
+    (see judge.judge_consistency); this number is reported alongside it as a cheap sanity
+    signal. Returns 1.0 for fewer than two non-empty answers (trivially self-consistent).
     """
-    if len([a for a in answers if a.strip()]) < 2:
-        return {"pairwise": 1.0, "vs_expected": None, "passed": True,
-                "note": "fewer than 2 non-empty answers"}
-
-    ans_vecs = embed(answers)
-    pairwise = mean_pairwise_similarity(ans_vecs)
-
-    vs_expected = None
-    if expected:
-        exp_vec = embed([expected])[0]
-        vs_expected = float(np.mean(ans_vecs @ exp_vec))
-
-    # Thresholds are documented constants, not magic: answers to paraphrases of the same
-    # question should be highly similar. Tune with the validation set.
-    PAIRWISE_THRESHOLD = 0.85
-    EXPECTED_THRESHOLD = 0.80
-    passed = pairwise >= PAIRWISE_THRESHOLD
-    if vs_expected is not None:
-        passed = passed and vs_expected >= EXPECTED_THRESHOLD
-
-    return {"pairwise": round(pairwise, 4),
-            "vs_expected": round(vs_expected, 4) if vs_expected is not None else None,
-            "passed": bool(passed)}
+    non_empty = [a for a in answers if a and a.strip()]
+    if len(non_empty) < 2:
+        return 1.0
+    return round(mean_pairwise_similarity(embed(non_empty)), 4)
 
 
 # --------------------------------------------------------------------------------------

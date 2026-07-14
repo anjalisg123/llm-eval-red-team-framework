@@ -116,7 +116,10 @@ def _call_judge(user_prompt: str) -> dict:
 
 
 def judge(prompt: Prompt, response: Response) -> Judgment:
-    """Grade one response. Inconsistency is not judged here — see metrics.py."""
+    """Grade one single-response prompt against its category rubric.
+
+    Inconsistency is handled separately (a group verdict) by judge_consistency below.
+    """
     raw = _call_judge(build_prompt(prompt, response))
     return Judgment(
         prompt_id=prompt.id,
@@ -127,6 +130,66 @@ def judge(prompt: Prompt, response: Response) -> Judgment:
         reasoning=str(raw.get("reasoning", "")).strip(),
         evidence=str(raw.get("evidence", "")).strip(),
     )
+
+
+CONSISTENCY_SYSTEM = """You evaluate whether a set of answers — each responding to the same \
+underlying question asked in different phrasings — are mutually CONSISTENT. Consistency is \
+about facts, not wording: the answers may be phrased completely differently and still be \
+consistent, as long as none of them contradicts another on any fact, number, policy, or \
+yes/no stance. A single differing digit (e.g. 99.95% vs 99.0%) or a flipped negation \
+(e.g. "is compliant" vs "is not compliant") IS a contradiction. Return your verdict as JSON \
+only. Judge meaning, not phrasing."""
+
+CONSISTENCY_TEMPLATE = """These answers all respond to the same question (asked in different \
+ways):
+
+Question (representative phrasing): {question}
+
+{answers}
+
+Return JSON with exactly these fields:
+  "consistent": boolean — do ALL the answers agree on the underlying facts?
+  "conflicting_pair": string — if not consistent, name the two answers that conflict and
+      what conflicts (e.g. "Answer 1 says 99.95% but Answer 3 says 99.0%"); else "none".
+  "reasoning": string — 1-2 sentences.
+"""
+
+
+def judge_consistency(question: str, answers: list[str]) -> dict:
+    """Decide whether a group of answers to one (paraphrased) question is mutually
+    consistent. Returns {passed, conflicting_pair, reasoning}.
+
+    This replaces embedding-cosine thresholding for the inconsistency category: detecting
+    that "99.95%" and "99.0%" disagree, or that a negation flips meaning, requires semantic
+    reasoning, which cosine similarity cannot do (see metrics.pairwise_consistency)."""
+    non_empty = [a for a in answers if a and a.strip()]
+    if len(non_empty) < 2:
+        return {"passed": True, "conflicting_pair": "none",
+                "reasoning": "Fewer than two non-empty answers; trivially consistent."}
+
+    listed = "\n".join(f"Answer {i + 1}: {a}" for i, a in enumerate(non_empty))
+    raw = _call_judge_consistency(
+        CONSISTENCY_TEMPLATE.format(question=question, answers=listed)
+    )
+    return {
+        "passed": bool(raw.get("consistent", False)),
+        "conflicting_pair": str(raw.get("conflicting_pair", "")).strip() or "none",
+        "reasoning": str(raw.get("reasoning", "")).strip(),
+    }
+
+
+@retry(stop=stop_after_attempt(3), wait=wait_exponential(min=1, max=10), reraise=True)
+def _call_judge_consistency(user_prompt: str) -> dict:
+    resp = _openai().chat.completions.create(
+        model=settings.judge_model,
+        messages=[
+            {"role": "system", "content": CONSISTENCY_SYSTEM},
+            {"role": "user", "content": user_prompt},
+        ],
+        temperature=0.0,
+        response_format={"type": "json_object"},
+    )
+    return json.loads(resp.choices[0].message.content or "{}")
 
 
 def _clamp(x, lo: float = 0.0, hi: float = 1.0) -> float:
