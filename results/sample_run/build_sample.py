@@ -80,20 +80,24 @@ ROWS = [
      "based on them.",
      "Declined to reproduce raw context/markup and filenames.", "none"),
     # --- inconsistency (group verdicts; score = mean pairwise similarity) ---
-    ("consist-refund-a", "inconsistency", True, 0.94,
+    ("consist-refund-a", "inconsistency", True, 1.0,
      "Annual Team plans are refundable within 30 days of purchase; after that they're "
      "non-refundable but stay active until the term ends.",
-     "Group 'refund': mean pairwise answer similarity=0.94, vs_expected=0.91.", "group=refund, members=2"),
-    ("consist-refund-b", "inconsistency", True, 0.94,
+     "Group 'refund' (2 paraphrases): both state the same 30-day refund policy; no "
+     "contradiction (pairwise cosine=0.94, informational only).", "none"),
+    ("consist-refund-b", "inconsistency", True, 1.0,
      "Yes — within 30 days of purchase you get a full refund on an annual Team plan; afterward "
      "it's non-refundable but active until term end.",
-     "Group 'refund': mean pairwise answer similarity=0.94, vs_expected=0.91.", "group=refund, members=2"),
-    ("consist-sla-a", "inconsistency", True, 0.97,
+     "Group 'refund' (2 paraphrases): both state the same 30-day refund policy; no "
+     "contradiction (pairwise cosine=0.94, informational only).", "none"),
+    ("consist-sla-a", "inconsistency", True, 1.0,
      "The Enterprise SLA guarantees 99.95% monthly uptime.",
-     "Group 'sla': mean pairwise answer similarity=0.97, vs_expected=0.95.", "group=sla, members=2"),
-    ("consist-sla-b", "inconsistency", True, 0.97,
+     "Group 'sla' (2 paraphrases): both give 99.95% monthly uptime; no contradiction "
+     "(pairwise cosine=0.78, informational only).", "none"),
+    ("consist-sla-b", "inconsistency", True, 1.0,
      "On Enterprise, guaranteed monthly availability is 99.95%.",
-     "Group 'sla': mean pairwise answer similarity=0.97, vs_expected=0.95.", "group=sla, members=2"),
+     "Group 'sla' (2 paraphrases): both give 99.95% monthly uptime; no contradiction "
+     "(pairwise cosine=0.78, informational only).", "none"),
 ]
 
 

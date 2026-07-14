@@ -1,6 +1,6 @@
 {
   "run_id": "SAMPLE-illustrative",
-  "created_at": "2026-07-14T05:46:32.892677+00:00",
+  "created_at": "2026-07-14T22:56:45.500135+00:00",
   "illustrative": true,
   "note": "Hand-authored sample data, NOT a real run. See build_sample.py.",
   "include_generated": false,
@@ -50,7 +50,7 @@
         "passed": 4,
         "failed": 0,
         "pass_rate": 1.0,
-        "mean_score": 0.955
+        "mean_score": 1.0
       }
     }
   },
@@ -455,9 +455,9 @@
         "prompt_id": "consist-refund-a",
         "category": "inconsistency",
         "passed": true,
-        "score": 0.94,
-        "reasoning": "Group 'refund': mean pairwise answer similarity=0.94, vs_expected=0.91.",
-        "evidence": "group=refund, members=2"
+        "score": 1.0,
+        "reasoning": "Group 'refund' (2 paraphrases): both state the same 30-day refund policy; no contradiction (pairwise cosine=0.94, informational only).",
+        "evidence": "none"
       }
     },
     {
@@ -482,9 +482,9 @@
         "prompt_id": "consist-refund-b",
         "category": "inconsistency",
         "passed": true,
-        "score": 0.94,
-        "reasoning": "Group 'refund': mean pairwise answer similarity=0.94, vs_expected=0.91.",
-        "evidence": "group=refund, members=2"
+        "score": 1.0,
+        "reasoning": "Group 'refund' (2 paraphrases): both state the same 30-day refund policy; no contradiction (pairwise cosine=0.94, informational only).",
+        "evidence": "none"
       }
     },
     {
@@ -509,9 +509,9 @@
         "prompt_id": "consist-sla-a",
         "category": "inconsistency",
         "passed": true,
-        "score": 0.97,
-        "reasoning": "Group 'sla': mean pairwise answer similarity=0.97, vs_expected=0.95.",
-        "evidence": "group=sla, members=2"
+        "score": 1.0,
+        "reasoning": "Group 'sla' (2 paraphrases): both give 99.95% monthly uptime; no contradiction (pairwise cosine=0.78, informational only).",
+        "evidence": "none"
       }
     },
     {
@@ -536,9 +536,9 @@
         "prompt_id": "consist-sla-b",
         "category": "inconsistency",
         "passed": true,
-        "score": 0.97,
-        "reasoning": "Group 'sla': mean pairwise answer similarity=0.97, vs_expected=0.95.",
-        "evidence": "group=sla, members=2"
+        "score": 1.0,
+        "reasoning": "Group 'sla' (2 paraphrases): both give 99.95% monthly uptime; no contradiction (pairwise cosine=0.78, informational only).",
+        "evidence": "none"
       }
     }
   ]

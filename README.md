@@ -46,10 +46,10 @@ flowchart LR
         gen --> runner["runner.py"]
         runner -->|HTTP| server
         runner --> route{category?}
-        route -->|inconsistency| metrics["metrics.py<br/>embedding similarity"]
-        route -->|all others| judge["judge.py<br/>LLM-as-judge"]
-        metrics --> results["results/*.json"]
-        judge --> results
+        route -->|inconsistency<br/>group verdict| judge["judge.py<br/>LLM-as-judge"]
+        route -->|all others| judge
+        metrics["metrics.py<br/>cosine (informational)"] -.reported.-> judge
+        judge --> results["results/*.json"]
     end
 
     results --> dashboard["dashboard/app.py<br/>Streamlit"]
@@ -68,7 +68,7 @@ The target system and the evaluation framework are fully decoupled: `evals/` nev
 |---|---|---|
 | **Hallucination** | Claims not supported by the retrieved context | LLM judge (grounding rubric) |
 | **Refusal** | Over-refusal (declining answerable questions) **and** under-refusal (answering unanswerable ones) | LLM judge (calibration rubric) |
-| **Inconsistency** | Divergent answers to paraphrases of the same question | **Embedding similarity, not the judge** |
+| **Inconsistency** | Divergent answers to paraphrases of the same question | LLM judge (group agreement); cosine similarity reported but not decisive |
 | **Drift** | Losing the thread after distractor turns in multi-turn context | LLM judge (re-anchoring rubric) |
 | **Injection** | Direct (user-message) **and indirect** (a poisoned doc planted in the corpus) prompt injection | LLM judge (instruction-priority rubric) |
 | **Leakage** | Extracting the system prompt or dumping raw retrieved context | LLM judge (leakage rubric) |
@@ -85,7 +85,7 @@ that's how these attacks happen in real systems, and hiding it would make the te
 - **Python 3.12**, packaged with `pyproject.toml`.
 - **Target:** FastAPI + ChromaDB + OpenAI (`gpt-4o-mini` generation, `text-embedding-3-small`).
 - **Judge:** OpenAI `gpt-4o` — deliberately a **different, stronger** model than the target.
-- **Metrics:** NumPy for cosine similarity; Cohen's kappa implemented by hand.
+- **Metrics:** NumPy for cosine similarity (an informational signal); Cohen's kappa implemented by hand.
 - **Dashboard:** Streamlit + Altair.
 - **Tests:** pytest, with all LLM/HTTP boundaries mocked.
 
@@ -112,7 +112,7 @@ No DeepEval / Ragas / promptfoo — see [Design decisions](#design-decisions-the
 │   ├── dataset.py              #   load + validate prompt sets
 │   ├── client.py               #   HTTP client to the target (the only link)
 │   ├── judge.py                #   LLM-as-judge: prompt, call, parse -> Judgment
-│   ├── metrics.py              #   similarity, consistency, Cohen's kappa
+│   ├── metrics.py              #   pairwise cosine (informational), Cohen's kappa
 │   └── runner.py               #   orchestrates prompts -> target -> scoring -> results
 ├── validation/
 │   ├── human_labels.csv        #   manual pass/fail labels on a subset
@@ -159,7 +159,11 @@ make eval                    # writes results/run_<timestamp>.json + results/lat
 # (optional) expand the prompt set with LLM-generated variations first
 python -m evals.datasets.generate_prompts
 
-# Validate the judge against human labels
+# Validate the judge against human labels:
+#   1. generate a blind labeling template from the run you just did
+python -m validation.make_label_template          # writes validation/human_labels.csv
+#   2. open that CSV and set human_passed to 1 (correct) or 0 (failed) per row
+#   3. compute judge-vs-human agreement (Cohen's kappa)
 python -m validation.validate
 
 # Explore results
@@ -191,7 +195,7 @@ perfect") over 12 labeled cases.**
 
 | Category | Pass rate | Notable finding |
 |---|---|---|
-| Inconsistency | 4/4 (100%) | Answers to paraphrases stayed tightly clustered (mean pairwise similarity ≥ 0.94). |
+| Inconsistency | 4/4 (100%) | The judge found each paraphrase group states the same policy — even the `sla` group, whose cosine (0.78) would have failed a similarity threshold despite both answers saying "99.95%". |
 | Leakage | 2/2 (100%) | Declined to reveal the system prompt or dump raw context. |
 | Refusal | 3/4 (75%) | One **under-refusal**: fabricated a CEO and founding year absent from the corpus. |
 | Hallucination | 2/3 (67%) | Invented a phone number for a plan whose context says "email-only." |
@@ -225,13 +229,20 @@ a target grading itself would inflate scores. And grading is a *harder* task tha
 so the judge should be the more capable model. The target is `gpt-4o-mini`; the judge is
 `gpt-4o`.
 
-**Why score inconsistency with embeddings instead of the judge?**
-"Did these paraphrase answers agree?" is a measurable quantity — mean pairwise cosine
-similarity across the answer set — not a judgment call. Using math where math suffices makes
-that score cheap, fast, and fully reproducible, and reserves the (expensive, noisier) judge
-for the categories that genuinely need semantic reasoning. The consistency check also
-compares answers to the *expected* answer, so a set of answers that agree with each other
-but are all wrong still fails.
+**Why does the inconsistency category use the judge, when "did these answers agree?" sounds
+like a measurable quantity?**
+It started as pure embedding cosine similarity — that seemed like exactly the case where a
+measurement beats a judgment. Validating against human labels proved that wrong. Cosine
+similarity of embeddings tracks *lexical/topical* overlap, not *logical* agreement: two
+answers that differ only by a negation ("is compliant" vs "is not compliant" ≈ 0.90) or a
+single digit ("99.95%" vs "99.0%" ≈ 0.99) score as nearly identical, while a genuine
+paraphrase in different vocabulary can fall below 0.72. On a labeled basket the two classes
+*overlapped completely* — no threshold could separate them. The lesson: deciding whether two
+factual claims agree **is** semantic reasoning (you must understand that a flipped negation or
+a changed number is a contradiction), so it belongs with the judge. The judge now returns the
+consistency verdict; cosine is retained only as a cheap, reported-but-not-decisive signal.
+This reversed an earlier design decision — and being able to explain *why* it was wrong is a
+stronger answer than the original claim was.
 
 **Why per-category judge rubrics instead of one "is this good?" prompt?**
 Each category asks a different question of the answer. A single generic rubric gives the
@@ -269,11 +280,13 @@ into a staged demo.
 **our** logic, never the LLM's behavior:
 
 - `test_metrics.py` — Cohen's kappa (perfect / chance-level / total-disagreement /
-  degenerate cases), pairwise similarity, and the consistency thresholds including the
-  "consistent but wrong" failure case.
+  degenerate cases) and pairwise similarity (the informational consistency signal).
 - `test_judge_parsing.py` — the judge's output is coerced into a valid `Judgment` even when
-  the model returns out-of-range scores, missing fields, or non-numeric values.
+  the model returns out-of-range scores, missing fields, or non-numeric values, plus the
+  `judge_consistency` group verdict (including its no-LLM short-circuit for < 2 answers).
 - `test_runner.py` — summary aggregation and inconsistency-group verdict sharing.
+- `test_validate.py` — the judge-vs-human staleness guard (matching / stale / blank /
+  missing labels).
 
 ---
 
@@ -284,13 +297,24 @@ into a staged demo.
 - **Judge on one model family.** The judge and target are both OpenAI. A stronger design
   would add a cross-provider judge (e.g. an Anthropic judge grading an OpenAI target) to
   further reduce shared-blind-spot risk.
-- **Small human-label set.** Kappa is computed on 12 cases; a real deployment wants a larger,
-  periodically-refreshed labeled set and inter-annotator agreement among multiple humans.
+- **Small human-label set.** Kappa is computed on a handful of cases; a real deployment wants
+  a larger, periodically-refreshed labeled set and inter-annotator agreement among multiple
+  humans. Labels are generated **blind** (the judge's verdict is withheld from the labeler to
+  avoid anchoring bias) and each label is **bound to the answer it was made against** via a
+  hash — the validator excludes any label whose answer has since changed (a "staleness guard")
+  and reports it, instead of silently comparing a label to a different output.
 - **Retriever is intentionally basic.** Fixed-size chunking and top-k dense retrieval. The
   point was to expose an *ordinary* system's failure modes, not to build a great retriever —
   but hardening the target and re-measuring would make a compelling follow-up.
-- **Consistency thresholds are hand-set** (0.85 pairwise / 0.80 vs-expected). They should be
-  calibrated against the human-labeled set rather than chosen a priori.
+- **Consistency scoring was migrated from cosine to the judge.** An earlier version
+  thresholded embedding cosine similarity (0.85 pairwise / 0.80 vs-expected). Calibrating
+  those thresholds against the human labels revealed that cosine cannot separate same-policy
+  paraphrases from same-wording contradictions (a negation or a single changed digit is nearly
+  invisible to the embedding), so no threshold worked. Inconsistency is now decided by the
+  judge (`judge.judge_consistency`), with cosine kept only as a reported signal. Remaining
+  gap: the judge-based check is validated on a small labeled set; a larger set — including
+  deliberately-contradictory groups — would harden it further. An NLI/entailment model is a
+  possible future upgrade for a non-LLM, still-semantic signal.
 
 ---
 
